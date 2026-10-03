@@ -1,7 +1,7 @@
 // news.test.ts + registry.test.ts — pure unit tests, no network.
 import { describe, test, expect } from "bun:test";
 import { parseFeed } from "../src/news";
-import { REGISTRY, bySym, searchRegistry, DASH_INDICES, DASH_FX, DASH_CMD, DASH_STOCKS, DASH_GLOBAL } from "../src/registry";
+import { REGISTRY, bySym, searchRegistry, DASH_INDICES, DASH_FX, DASH_CMD, DASH_STOCKS, DASH_STARTUPS, DASH_GLOBAL } from "../src/registry";
 
 const RSS = `<?xml version="1.0"?><rss version="2.0"><channel><title>T</title>
 <item><title>Rand rallies &amp; stocks</title><link>https://x.test/1</link><pubDate>Fri, 02 Oct 2026 12:00:00 GMT</pubDate></item>
@@ -40,7 +40,7 @@ describe("parseFeed", () => {
 
 describe("registry", () => {
   test("every dashboard symbol is registered", () => {
-    for (const s of [...DASH_INDICES, ...DASH_FX, ...DASH_CMD, ...DASH_STOCKS, ...DASH_GLOBAL]) {
+    for (const s of [...DASH_INDICES, ...DASH_FX, ...DASH_CMD, ...DASH_STOCKS, ...DASH_STARTUPS, ...DASH_GLOBAL]) {
       expect(bySym.has(s), s).toBe(true);
     }
   });
@@ -55,6 +55,8 @@ describe("registry", () => {
     expect(r2[0].sym).toBe("USDZAR=X");
     const r3 = searchRegistry("rand");
     expect(r3.some((r) => r.sym === "USDZAR=X")).toBe(true);
+    expect(searchRegistry("nubank")[0].sym).toBe("NU");
+    expect(searchRegistry("jumia")[0].sym).toBe("JMIA");
     expect(searchRegistry("")).toEqual([]);
     expect(searchRegistry("zzzz-no-match")).toEqual([]);
   });

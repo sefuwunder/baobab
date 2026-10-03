@@ -2,7 +2,7 @@
 // the Caribbean & Latin America. Bun + zero deps + SQLite. Port 3015.
 import { initDataDir, getDb, cacheGet, cacheSet, watchlist, watchAdd, watchRemove } from "./db";
 import { quote, quotes, history, type Quote } from "./yahoo";
-import { REGISTRY, bySym, searchRegistry, DASH_INDICES, DASH_FX, DASH_CMD, DASH_STOCKS, DASH_GLOBAL } from "./registry";
+import { REGISTRY, bySym, searchRegistry, DASH_INDICES, DASH_FX, DASH_CMD, DASH_STOCKS, DASH_STARTUPS, DASH_GLOBAL } from "./registry";
 import { fetchNews } from "./news";
 
 const PORT = Number(process.env.BAOBAB_PORT || 3015);
@@ -75,7 +75,7 @@ async function handle(req: Request): Promise<Response> {
   // dashboard payload: one call for everything on TOP
   if (req.method === "GET" && path === "/api/overview") {
     const groups: Record<string, string[]> = {
-      indices: DASH_INDICES, fx: DASH_FX, cmd: DASH_CMD, stocks: DASH_STOCKS, global: DASH_GLOBAL,
+      indices: DASH_INDICES, fx: DASH_FX, cmd: DASH_CMD, stocks: DASH_STOCKS, startups: DASH_STARTUPS, global: DASH_GLOBAL,
     };
     const out: Record<string, unknown> = { asof: Date.now() };
     for (const [k, syms] of Object.entries(groups)) {

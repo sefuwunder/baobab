@@ -14,6 +14,9 @@ const FEEDS: Feed[] = [
   { url: "https://www.jamaicaobserver.com/feed/", source: "Jamaica Observer", region: "caribbean" },
   { url: "https://barbadostoday.bb/feed/", source: "Barbados Today", region: "caribbean" },
   { url: "https://en.mercopress.com/rss/", source: "MercoPress", region: "latam" },
+  { url: "https://techcabal.com/feed/", source: "TechCabal", region: "africa" },
+  { url: "https://disrupt-africa.com/feed/", source: "Disrupt Africa", region: "africa" },
+  { url: "https://latamlist.com/feed/", source: "LatamList", region: "latam" },
 ];
 
 const UA = "Mozilla/5.0 (compatible; Baobab/1.0; +https://github.com/sefuwunder/baobab)";

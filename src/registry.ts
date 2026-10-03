@@ -38,6 +38,14 @@ export const REGISTRY: Sym[] = [
   { sym: "BAP", name: "Credicorp", region: "latam", kind: "stock", note: "Bank · PE" },
   { sym: "EC", name: "Ecopetrol", region: "latam", kind: "stock", note: "Oil · CO" },
   { sym: "CIB", name: "Bancolombia", region: "latam", kind: "stock", note: "Bank · CO" },
+  // ---- startups & new economy (the region's unicorns, now listed) ----
+  { sym: "NU", name: "Nubank", region: "latam", kind: "stock", note: "Fintech · BR" },
+  { sym: "STNE", name: "StoneCo", region: "latam", kind: "stock", note: "Fintech · BR" },
+  { sym: "PAGS", name: "PagSeguro", region: "latam", kind: "stock", note: "Fintech · BR" },
+  { sym: "XP", name: "XP Inc", region: "latam", kind: "stock", note: "Broker · BR" },
+  { sym: "DLO", name: "dLocal", region: "latam", kind: "stock", note: "Fintech · UY" },
+  { sym: "GLOB", name: "Globant", region: "latam", kind: "stock", note: "Software · AR" },
+  { sym: "JMIA", name: "Jumia", region: "africa", kind: "stock", note: "E-commerce · pan-African" },
   // ---- FX: local currency per 1 USD ----
   { sym: "USDZAR=X", name: "USD / Rand", region: "africa", kind: "fx", ccy: "ZAR", note: "South Africa" },
   { sym: "USDNGN=X", name: "USD / Naira", region: "africa", kind: "fx", ccy: "NGN", note: "Nigeria" },
@@ -94,6 +102,7 @@ export const DASH_INDICES = ["^BVSP", "^MXX", "^MERV", "AFK", "EZA", "EGY", "ECH
 export const DASH_FX = ["USDZAR=X", "USDNGN=X", "USDEGP=X", "USDKES=X", "USDGHS=X", "USDBRL=X", "USDMXN=X", "USDARS=X", "USDCLP=X", "USDCOP=X", "USDPEN=X", "USDJMD=X", "USDTTD=X"];
 export const DASH_CMD = ["BZ=F", "CL=F", "GC=F", "HG=F", "PL=F", "KC=F", "CC=F", "SB=F", "SI=F"];
 export const DASH_STOCKS = ["VALE", "PBR", "ITUB", "AMX", "FMX", "MELI", "YPF", "GGAL", "SQM", "BAP", "EC", "CIB"];
+export const DASH_STARTUPS = ["NU", "STNE", "PAGS", "XP", "DLO", "GLOB", "JMIA"];
 export const DASH_GLOBAL = ["^SPX", "^DJI", "^NDQ", "^FTSE", "EURUSD=X"];
 
 // Exchange hours for the open/closed badge (local open/close, tz offset from UTC in minutes)

@@ -298,6 +298,8 @@ async function vTop() {
     ${byRegion(o.indices)}
     <div class="sec-label">Heavyweights</div>
     <div class="grid stocks">${regionCards(o.stocks, null)}</div>
+    <div class="sec-label">Startups & new economy</div>
+    ${byRegion(o.startups)}
     <div class="sec-label">Foreign exchange <span class="stale">per USD</span></div>
     <table class="q"><thead><tr><th>PAIR</th><th>MARKET</th><th class="num">LAST</th><th class="num">CHG %</th></tr></thead>
     <tbody>${o.fx.map((q) => `<tr class="row" data-sym="${esc(q.sym)}">

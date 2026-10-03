@@ -109,10 +109,11 @@ describe("api", () => {
   test("overview shape", async () => {
     const { s, d } = await jget("/api/overview");
     expect(s).toBe(200);
-    for (const k of ["indices", "fx", "cmd", "stocks", "global"]) {
+    for (const k of ["indices", "fx", "cmd", "stocks", "startups", "global"]) {
       expect(Array.isArray(d[k]), k).toBe(true);
       expect(d[k].length).toBeGreaterThan(0);
     }
     expect(d.indices[0].sym).toBe("^BVSP");
+    expect(d.startups.some((q: any) => q.sym === "NU")).toBe(true);
   });
 });
