@@ -1,9 +1,10 @@
 // server.ts — Baobab: a Bloomberg-style markets terminal for Africa,
 // the Caribbean & Latin America. Bun + zero deps + SQLite. Port 3015.
-import { initDataDir, getDb, cacheGet, cacheSet, watchlist, watchAdd, watchRemove } from "./db";
+import { initDataDir, getDb, cacheGet, cacheSet, watchlist, watchAdd, watchRemove, getSetting, setSetting } from "./db";
 import { quote, quotes, history, type Quote } from "./yahoo";
 import { REGISTRY, bySym, searchRegistry, DASH_INDICES, DASH_FX, DASH_CMD, DASH_STOCKS, DASH_STARTUPS, DASH_GLOBAL } from "./registry";
 import { fetchNews } from "./news";
+import { jseStocks, jseQuote, jseHistory, jseKeyStatus, type JseQuote } from "./jse";
 
 const PORT = Number(process.env.BAOBAB_PORT || 3015);
 const QUOTE_TTL = 90_000;
@@ -22,6 +23,10 @@ async function body(req: Request): Promise<any> {
 
 /** Cached single quote; serves stale data with stale:true when the fetch fails. */
 async function getQuote(sym: string): Promise<{ q: Quote | null; stale: boolean }> {
+  if (sym.startsWith("JSE:")) {
+    const jq = await getJseQuote(sym.slice(4));
+    return { q: jq.q as unknown as Quote | null, stale: jq.stale };
+  }
   const key = "q:" + sym;
   const hit = cacheGet(key, QUOTE_TTL);
   if (!hit.stale && hit.val) return { q: hit.val, stale: false };
@@ -30,6 +35,48 @@ async function getQuote(sym: string): Promise<{ q: Quote | null; stale: boolean 
     if (q) { cacheSet(key, q); return { q, stale: false }; }
   } catch { /* fall through to stale */ }
   return { q: hit.val || null, stale: true };
+}
+
+/** Stacks API key, server-side only. */
+function jseKey(): string | null { return getSetting("stacks_api_key"); }
+
+function shapeJseQuote(q: JseQuote, stale: boolean) {
+  return {
+    sym: "JSE:" + q.sym, name: q.name, region: "caribbean", kind: "stock",
+    note: "JSE Jamaica", ccy: "JMD",
+    price: q.price, prevClose: q.price - q.chg, chg: q.chg, chgPct: q.chgPct,
+    dayHigh: null, dayLow: null, wk52High: null, wk52Low: null,
+    volume: q.volume, pe: q.pe, asof: Date.now(), stale,
+  };
+}
+
+async function getJseQuote(sym: string): Promise<{ q: ReturnType<typeof shapeJseQuote> | null; stale: boolean }> {
+  const key = jseKey();
+  if (!key) return { q: null, stale: true };
+  const ck = "jseq:" + sym.toUpperCase();
+  const hit = cacheGet(ck, QUOTE_TTL);
+  if (!hit.stale && hit.val) return { q: hit.val, stale: false };
+  try {
+    const q = await jseQuote(key, sym);
+    if (q) { const s = shapeJseQuote(q, false); cacheSet(ck, s); return { q: s, stale: false }; }
+  } catch { /* fall through to stale */ }
+  return { q: hit.val || null, stale: true };
+}
+
+/** Full JSE board, one upstream request, cached. */
+async function getJseBoard(): Promise<{ list: Array<ReturnType<typeof shapeJseQuote>>; stale: boolean }> {
+  const key = jseKey();
+  if (!key) return { list: [], stale: true };
+  const hit = cacheGet("jse:stocks", QUOTE_TTL);
+  if (!hit.stale && hit.val) return { list: hit.val, stale: false };
+  try {
+    const stocks = await jseStocks(key);
+    const list = stocks.map((q) => shapeJseQuote(q, false));
+    cacheSet("jse:stocks", list);
+    return { list, stale: false };
+  } catch {
+    return { list: hit.val || [], stale: true };
+  }
 }
 
 async function getQuotes(syms: string[]): Promise<Array<{ q: Quote | null; stale: boolean }>> {
@@ -43,8 +90,9 @@ async function getQuotes(syms: string[]): Promise<Array<{ q: Quote | null; stale
 }
 
 function shapeQuote(r: { q: Quote | null; stale: boolean }) {
-  const q = r.q;
+  const q = r.q as any;
   if (!q) return null;
+  if (typeof q.sym === "string" && q.sym.startsWith("JSE:")) return { ...q, stale: r.stale }; // already shaped
   const reg = bySym.get(q.sym);
   return {
     sym: q.sym, name: reg?.name || q.name, region: reg?.region || "global", kind: reg?.kind || "stock",
@@ -82,6 +130,11 @@ async function handle(req: Request): Promise<Response> {
       const qs = await getQuotes(syms);
       out[k] = qs.map(shapeQuote).filter(Boolean);
     }
+    // Jamaica board via the Stacks API (needs a free key in KEYS)
+    const jb = await getJseBoard();
+    out.jamaica = jb.list;
+    out.jse_configured = !!jseKey();
+    out.jse_stale = jb.stale;
     return json(out);
   }
 
@@ -105,6 +158,60 @@ async function handle(req: Request): Promise<Response> {
     } catch { /* fall through */ }
     if (hit.val) return json({ sym, range, bars: hit.val, stale: true });
     return err("No history for " + sym, 502);
+  }
+
+  if (req.method === "GET" && path === "/api/keys") {
+    const key = jseKey();
+    if (!key) return json({ stacks: { configured: false } });
+    // surface tier without ever exposing the key
+    const hit = cacheGet("jse:keystatus", 3_600_000);
+    let st = (!hit.stale && hit.val) ? hit.val : null;
+    if (!st) {
+      st = await jseKeyStatus(key);
+      cacheSet("jse:keystatus", st);
+    }
+    return json({ stacks: { configured: true, active: st.active, tier: st.tier } });
+  }
+
+  if (req.method === "POST" && path === "/api/keys") {
+    const b = await body(req);
+    const key = String(b.key || "").trim();
+    if (!key) {
+      setSetting("stacks_api_key", null);
+      return json({ ok: true, configured: false });
+    }
+    const st = await jseKeyStatus(key);
+    if (!st.active) return err("That key didn't validate with Stacks (check it and try again).", 401);
+    setSetting("stacks_api_key", key);
+    cacheSet("jse:keystatus", st);
+    return json({ ok: true, configured: true, tier: st.tier });
+  }
+
+  if (req.method === "GET" && path === "/api/jse/quote") {
+    const sym = String(url.searchParams.get("sym") || "").trim();
+    if (!sym) return err("sym required", 400);
+    if (!jseKey()) return err("JSE not configured — add a Stacks API key in KEYS.", 503);
+    const r = await getJseQuote(sym);
+    if (!r.q) return err("No JSE quote for " + sym, 502);
+    return json({ quote: r.q });
+  }
+
+  if (req.method === "GET" && path === "/api/jse/history") {
+    const sym = String(url.searchParams.get("sym") || "").trim();
+    const range = String(url.searchParams.get("range") || "1Y").toUpperCase();
+    if (!sym) return err("sym required", 400);
+    const key = jseKey();
+    if (!key) return err("JSE not configured — add a Stacks API key in KEYS.", 503);
+    const limit = { "1D": 5, "1W": 7, "1M": 30, "3M": 90, "1Y": 365, "5Y": 1825 }[range] || 365;
+    const ck = `jh:${sym.toUpperCase()}:${limit}`;
+    const hit = cacheGet(ck, HIST_TTL);
+    if (!hit.stale && hit.val) return json({ sym, range, bars: hit.val, stale: false });
+    try {
+      const bars = await jseHistory(key, sym, limit);
+      if (bars.length) { cacheSet(ck, bars); return json({ sym, range, bars, stale: false }); }
+    } catch { /* fall through */ }
+    if (hit.val) return json({ sym, range, bars: hit.val, stale: true });
+    return err("No JSE history for " + sym, 502);
   }
 
   if (req.method === "GET" && path === "/api/search") {

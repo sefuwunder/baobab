@@ -4,12 +4,13 @@ A Bloomberg-style markets terminal for **Africa, the Caribbean & Latin America**
 
 ## What it does
 
-- **TOP** — market overview: regional indices & ETF trackers with sparklines, heavyweight stocks, an FX table (13 local currencies per USD), commodities, and global context. Live exchange open/shut badges for B3, BMV, BCBA, and NYSE.
+- **TOP** — market overview: regional indices & ETF trackers with sparklines, heavyweight stocks, a startups board, the Jamaica (JSE) board, an FX table (13 local currencies per USD), commodities, and global context. Live exchange open/shut badges for B3, BMV, BCBA, and NYSE.
 - **Security view** — any symbol: big interactive chart (1D–5Y, hover crosshair), prev close, day range with position marker, 52-week range, volume.
-- **WATCH** — persistent watchlist (SQLite), add/remove, live quotes.
+- **WATCH** — persistent watchlist (SQLite), add/remove, live quotes. Jamaican stocks work too (`JSE:NCBFG`).
 - **FX / COMMOD** — currency and commodity boards. Commodities are the region's lifelines: Brent, WTI, gold, silver, copper, platinum, coffee, cocoa, sugar.
+- **KEYS** — paste your free [Stacks API](https://stacksja.com/developers) key to light up the Jamaica board (JSE Main + Junior Market — live prices, daily history, P/E). The key is validated once, stored server-side only, and never shown in the page.
 - **NEWS** — business headlines from African Business, Premium Times (Nigeria), AllAfrica, Jamaica Observer, Barbados Today, and MercoPress, filterable by region.
-- **Command bar** — Bloomberg-style functions: `TOP`, `W`, `FX`, `CMD`, `N`, `HELP`, `SEC VALE`, `ADD USDZAR`, or just type a symbol. `/` focuses it, `1–6` jumps between views.
+- **Command bar** — Bloomberg-style functions: `TOP`, `W`, `FX`, `CMD`, `N`, `KEYS`, `HELP`, `SEC VALE`, `JSE:NCBFG`, `ADD USDZAR`, or just type a symbol — bare Jamaican tickers (e.g. `NCBFG`) resolve via the JSE feed when a key is configured. `/` focuses it, `1–7` jumps between views.
 - Scrolling ticker tape, auto-refresh every 90s, graceful stale-data mode when a feed is unreachable.
 
 ## Coverage
@@ -18,7 +19,7 @@ A Bloomberg-style markets terminal for **Africa, the Caribbean & Latin America**
 |---|---|
 | Latin America | Bovespa, IPC, Merval indices · Brazil/Mexico/Argentina/Chile/Peru/LatAm ETFs · Vale, Petrobras, Itaú, América Móvil, FEMSA, MercadoLibre, YPF, Galicia, SQM, Credicorp, Ecopetrol, Bancolombia · BRL, MXN, ARS, CLP, COP, PEN |
 | Africa | Africa/South Africa/Egypt index ETFs · ZAR, NGN, EGP, KES, GHS |
-| Caribbean | JMD, TTD + regional news (no public equity index feed exists) |
+| Caribbean | **Jamaica Stock Exchange via the Stacks API** (needs a free key in KEYS) · JMD, TTD + regional news |
 | Global | S&P 500, Dow, Nasdaq 100, FTSE 100, EUR/USD, 9 commodities |
 
 ## Run it
@@ -33,5 +34,5 @@ Data lives in `./data/baobab.db` (created on boot, gitignored). Quotes via Yahoo
 ## Test
 
 ```sh
-bun test   # 26 checks: stubbed Yahoo client, feed parsing, registry, full API e2e, DOM-stubbed frontend render
+bun test   # 37 checks: stubbed Yahoo + Stacks clients, feed parsing, registry, full API e2e, DOM-stubbed frontend render
 ```

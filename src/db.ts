@@ -59,3 +59,20 @@ export function watchAdd(sym: string): void {
 export function watchRemove(sym: string): boolean {
   return getDb().query("DELETE FROM watchlist WHERE sym = ?").run(sym).changes > 0;
 }
+
+/** Opaque server-side settings (API keys etc). Never exposed to the client. */
+const skey = (k: string) => "setting:" + k;
+export function getSetting(key: string): string | null {
+  const row = getDb().query("SELECT val FROM kv WHERE key = ?").get(skey(key)) as any;
+  if (!row) return null;
+  try {
+    const v = JSON.parse(row.val);
+    return typeof v === "string" ? v : null;
+  } catch { return null; }
+}
+export function setSetting(key: string, val: string | null): void {
+  const db = getDb();
+  if (val == null) db.query("DELETE FROM kv WHERE key = ?").run(skey(key));
+  else db.query("INSERT INTO kv (key, val, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET val = excluded.val, updated_at = excluded.updated_at")
+    .run(skey(key), JSON.stringify(val), Date.now());
+}

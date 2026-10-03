@@ -193,7 +193,7 @@ function renderTape() {
 
 /* ---------- command bar ---------- */
 const TABS = [
-  ["top", "TOP"], ["watch", "WATCH"], ["fx", "FX"], ["cmd", "COMMOD"], ["news", "NEWS"], ["help", "HELP"],
+  ["top", "TOP"], ["watch", "WATCH"], ["fx", "FX"], ["cmd", "COMMOD"], ["news", "NEWS"], ["keys", "KEYS"], ["help", "HELP"],
 ];
 function renderTabs() {
   $("#tabs").innerHTML = TABS.map(([k, label]) =>
@@ -237,8 +237,15 @@ async function runCommand(raw) {
   try {
     const d = await jget("/api/quotes?syms=" + encodeURIComponent(sym));
     if (d.quotes.length) return go("sec", d.quotes[0].sym);
-    toast("Unknown symbol: " + sym);
-  } catch (e) { toast("Lookup failed."); }
+  } catch (e) {}
+  // JSE fallback: a bare Jamaican ticker like NCBFG
+  if (/^[A-Z0-9]{2,8}$/.test(sym)) {
+    try {
+      const j = await jget("/api/jse/quote?sym=" + encodeURIComponent(sym));
+      if (j.quote) return go("sec", j.quote.sym);
+    } catch (e) { /* not configured or unknown */ }
+  }
+  toast("Unknown symbol: " + sym);
 }
 
 /* ---------- views ---------- */
@@ -271,6 +278,7 @@ async function go(v, arg, force) {
   if (v === "fx") return vFx();
   if (v === "cmd") return vCmd();
   if (v === "news") return vNews();
+  if (v === "keys") return vKeys();
   if (v === "help") return vHelp();
   if (v === "sec") return vSec(arg);
 }
@@ -300,6 +308,12 @@ async function vTop() {
     <div class="grid stocks">${regionCards(o.stocks, null)}</div>
     <div class="sec-label">Startups & new economy</div>
     ${byRegion(o.startups)}
+    <div class="sec-label">Jamaica — JSE ${o.jse_configured ? (o.jse_stale ? '<span class="stale">· delayed</span>' : "") : '<span class="stale">· needs a free Stacks key</span>'}</div>
+    ${o.jse_configured
+      ? (o.jamaica.length
+        ? `<div class="grid stocks">${regionCards(o.jamaica, null)}</div>`
+        : `<div class="empty">JSE feed unreachable right now.</div>`)
+      : `<div class="card" id="jse-prompt" style="max-width:440px"><div class="nm">STACKS API KEY</div><div style="margin-top:6px">Add your free Stacks key in <b style="color:var(--amber)">KEYS</b> to light up the Jamaica board.</div></div>`}
     <div class="sec-label">Foreign exchange <span class="stale">per USD</span></div>
     <table class="q"><thead><tr><th>PAIR</th><th>MARKET</th><th class="num">LAST</th><th class="num">CHG %</th></tr></thead>
     <tbody>${o.fx.map((q) => `<tr class="row" data-sym="${esc(q.sym)}">
@@ -310,16 +324,21 @@ async function vTop() {
     <div class="sec-label">Global context</div>
     <div class="grid stocks">${regionCards(o.global, null)}</div>`;
   bindCards();
+  const jp = document.querySelector("#jse-prompt");
+  if (jp) jp.onclick = () => go("keys");
   loadSparks(o.indices.map((x) => x.sym));
 }
 
 async function vSec(sym) {
   state.secSym = sym;
+  const isJse = sym.startsWith("JSE:");
+  const jseSym = isJse ? sym.slice(4) : null;
   view.innerHTML = `<div class="empty">Loading ${esc(sym)}…</div>`;
-  let qs;
-  try { qs = await jget("/api/quotes?syms=" + encodeURIComponent(sym)); }
-  catch (e) { view.innerHTML = `<div class="empty">Couldn't load ${esc(sym)}.</div>`; return; }
-  const q = qs.quotes[0];
+  let q;
+  try {
+    if (isJse) q = (await jget("/api/jse/quote?sym=" + encodeURIComponent(jseSym))).quote;
+    else q = (await jget("/api/quotes?syms=" + encodeURIComponent(sym))).quotes[0];
+  } catch (e) { view.innerHTML = `<div class="empty">Couldn't load ${esc(sym)}.</div>`; return; }
   if (!q) { view.innerHTML = `<div class="empty">Unknown symbol: ${esc(sym)}.</div>`; return; }
   const inWatch = state.watch.some((w) => w.sym === q.sym);
   view.innerHTML = `
@@ -339,6 +358,7 @@ async function vSec(sym) {
           `<i style="left:${Math.min(100, Math.max(0, ((q.price - q.dayLow) / (q.dayHigh - q.dayLow)) * 100))}%"></i>` : ""}</div></div>
       <div class="stat"><div class="k">52W RANGE</div><div class="v">${fmtP(q.wk52Low)} – ${fmtP(q.wk52High)}</div></div>
       <div class="stat"><div class="k">VOLUME</div><div class="v">${fmtV(q.volume)}</div></div>
+      ${q.pe != null ? `<div class="stat"><div class="k">P/E</div><div class="v">${q.pe}</div></div>` : ""}
       <div class="stat"><div class="k">CURRENCY</div><div class="v">${esc(q.ccy || "—")}</div></div>
     </div>`;
   $("#wadd").onclick = async () => {
@@ -361,7 +381,9 @@ async function vSec(sym) {
   });
   async function loadChart() {
     try {
-      const d = await jget("/api/history?sym=" + encodeURIComponent(sym) + "&range=" + state.secRange);
+      const d = await jget(isJse
+        ? "/api/jse/history?sym=" + encodeURIComponent(jseSym) + "&range=" + state.secRange
+        : "/api/history?sym=" + encodeURIComponent(sym) + "&range=" + state.secRange);
       drawChart($("#chart"), d.bars);
     } catch (e) { drawChart($("#chart"), []); }
   }
@@ -458,6 +480,56 @@ async function vNews() {
   } catch (e) { $("#newslist").innerHTML = `<div class="empty">News feed unreachable.</div>`; }
 }
 
+async function vKeys() {
+  view.innerHTML = `<div class="sec-label">API keys</div><div class="empty">Checking…</div>`;
+  let st = { stacks: { configured: false } };
+  try { st = await jget("/api/keys"); } catch (e) {}
+  const s = st.stacks || {};
+  view.innerHTML = `
+    <div class="sec-label">API keys</div>
+    <div class="card" style="max-width:520px;cursor:default">
+      <div class="nm">STACKS — JAMAICA STOCK EXCHANGE</div>
+      <div style="margin:8px 0">${s.configured
+        ? `<span class="badge open">● CONNECTED</span>${s.tier ? ` <span class="stale">${esc(s.tier)} tier</span>` : ""}`
+        : `<span class="badge">○ NOT CONFIGURED</span>`}</div>
+      <div class="inline-form" style="margin:10px 0 0">
+        <input id="k-in" type="password" placeholder="pk_…" autocomplete="off" style="text-transform:none">
+        <button class="btn primary" id="k-save">Save</button>
+        ${s.configured ? `<button class="btn danger" id="k-del">Remove</button>` : ""}
+      </div>
+      <div class="stale" id="k-msg" style="margin-top:8px;min-height:18px"></div>
+      <div class="stale" style="margin-top:8px">Free key at stacksja.com/developers — paste it here. It is validated once, then lives only on this server, never in the page.</div>
+    </div>`;
+  const save = async () => {
+    const key = $("#k-in").value.trim();
+    if (!key) return;
+    $("#k-msg").textContent = "Validating with Stacks…";
+    try {
+      const r = await fetch("/api/keys", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      }).then((x) => x.json());
+      if (r.ok) {
+        toast("Key saved — Jamaica is live.");
+        state.overview = null; // reload so TOP picks up the board
+        vKeys();
+      } else $("#k-msg").textContent = r.error || "That key didn't validate.";
+    } catch (e) { $("#k-msg").textContent = "Couldn't reach the server."; }
+  };
+  $("#k-save").onclick = save;
+  $("#k-in").onkeydown = (e) => { if (e.key === "Enter") save(); };
+  const del = $("#k-del");
+  if (del) del.onclick = async () => {
+    await fetch("/api/keys", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "" }),
+    });
+    toast("Key removed.");
+    state.overview = null;
+    vKeys();
+  };
+}
+
 function vHelp() {
   const fns = [
     ["TOP", "Market overview — indices, FX, commodities"],
@@ -466,7 +538,9 @@ function vHelp() {
     ["CMD", "Commodities board"],
     ["N", "Regional news"],
     ["SEC &lt;sym&gt;", "Security detail + chart — e.g. SEC VALE"],
+    ["JSE:&lt;sym&gt;", "Jamaica quote — e.g. JSE:NCBFG (needs a Stacks key)"],
     ["ADD &lt;sym&gt;", "Add to watchlist — e.g. ADD USDZAR"],
+    ["KEYS", "API keys — Stacks key for Jamaica"],
     ["HELP", "This screen"],
   ];
   view.innerHTML = `
@@ -507,8 +581,8 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "/" && document.activeElement !== cmd && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) {
     e.preventDefault(); cmd.focus();
   }
-  const tabs = ["top", "watch", "fx", "cmd", "news", "help"];
-  if (/^[1-6]$/.test(e.key) && document.activeElement !== cmd) go(tabs[Number(e.key) - 1]);
+  const tabs = ["top", "watch", "fx", "cmd", "news", "keys", "help"];
+  if (/^[1-7]$/.test(e.key) && document.activeElement !== cmd) go(tabs[Number(e.key) - 1]);
 });
 setInterval(tickClock, 1000); tickClock();
 // refresh quotes periodically on data views
