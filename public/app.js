@@ -244,6 +244,11 @@ async function runCommand(raw) {
       const j = await jget("/api/jse/quote?sym=" + encodeURIComponent(sym));
       if (j.quote) return go("sec", j.quote.sym);
     } catch (e) { /* not configured or unknown */ }
+    // BVL fallback: a bare Lima ticker like BAP or VOLCABC1
+    try {
+      const b = await jget("/api/quotes?syms=" + encodeURIComponent("BVL:" + sym));
+      if (b.quotes.length) return go("sec", b.quotes[0].sym);
+    } catch (e) { /* unknown */ }
   }
   toast("Unknown symbol: " + sym);
 }
@@ -314,6 +319,14 @@ async function vTop() {
         ? `<div class="grid stocks">${regionCards(o.jamaica, null)}</div>`
         : `<div class="empty">JSE feed unreachable right now.</div>`)
       : `<div class="card" id="jse-prompt" style="max-width:440px"><div class="nm">STACKS API KEY</div><div style="margin-top:6px">Add your free Stacks key in <b style="color:var(--amber)">KEYS</b> to light up the Jamaica board.</div></div>`}
+    <div class="sec-label">Peru — BVL ${o.peru_stale ? '<span class="stale">· delayed</span>' : ""}</div>
+    ${o.peru && o.peru.length
+      ? `<div class="grid stocks">${regionCards(o.peru, null)}</div>`
+      : `<div class="empty">BVL board unreachable right now.</div>`}
+    <div class="sec-label">Argentina — BYMA ${o.argentina_stale ? '<span class="stale">· delayed</span>' : ""}</div>
+    ${o.argentina && o.argentina.length
+      ? `<div class="grid stocks">${regionCards(o.argentina, null)}</div>`
+      : `<div class="empty">BYMA board unreachable right now.</div>`}
     <div class="sec-label">Foreign exchange <span class="stale">per USD</span></div>
     <table class="q"><thead><tr><th>PAIR</th><th>MARKET</th><th class="num">LAST</th><th class="num">CHG %</th></tr></thead>
     <tbody>${o.fx.map((q) => `<tr class="row" data-sym="${esc(q.sym)}">
@@ -332,11 +345,13 @@ async function vTop() {
 async function vSec(sym) {
   state.secSym = sym;
   const isJse = sym.startsWith("JSE:");
-  const jseSym = isJse ? sym.slice(4) : null;
+  const isBvl = sym.startsWith("BVL:");
+  const isByma = sym.startsWith("BYMA:");
+  const xSym = (isJse || isBvl || isByma) ? sym.slice(4) : null;
   view.innerHTML = `<div class="empty">Loading ${esc(sym)}…</div>`;
   let q;
   try {
-    if (isJse) q = (await jget("/api/jse/quote?sym=" + encodeURIComponent(jseSym))).quote;
+    if (isJse) q = (await jget("/api/jse/quote?sym=" + encodeURIComponent(xSym))).quote;
     else q = (await jget("/api/quotes?syms=" + encodeURIComponent(sym))).quotes[0];
   } catch (e) { view.innerHTML = `<div class="empty">Couldn't load ${esc(sym)}.</div>`; return; }
   if (!q) { view.innerHTML = `<div class="empty">Unknown symbol: ${esc(sym)}.</div>`; return; }
@@ -381,9 +396,14 @@ async function vSec(sym) {
   });
   async function loadChart() {
     try {
-      const d = await jget(isJse
-        ? "/api/jse/history?sym=" + encodeURIComponent(jseSym) + "&range=" + state.secRange
-        : "/api/history?sym=" + encodeURIComponent(sym) + "&range=" + state.secRange);
+      const url = isJse
+        ? "/api/jse/history?sym=" + encodeURIComponent(xSym) + "&range=" + state.secRange
+        : isBvl && q.kind === "index"
+        ? "/api/bvl/history?sym=" + encodeURIComponent(xSym)
+        : isBvl || isByma
+        ? null // no history feed for these yet
+        : "/api/history?sym=" + encodeURIComponent(sym) + "&range=" + state.secRange;
+      const d = url ? await jget(url) : { bars: [] };
       drawChart($("#chart"), d.bars);
     } catch (e) { drawChart($("#chart"), []); }
   }
@@ -539,6 +559,8 @@ function vHelp() {
     ["N", "Regional news"],
     ["SEC &lt;sym&gt;", "Security detail + chart — e.g. SEC VALE"],
     ["JSE:&lt;sym&gt;", "Jamaica quote — e.g. JSE:NCBFG (needs a Stacks key)"],
+    ["BVL:&lt;sym&gt;", "Lima quote — e.g. BVL:BAP (keyless BVL feed)"],
+    ["BYMA:&lt;sym&gt;", "Argentine index — e.g. BYMA:G (keyless BYMA feed)"],
     ["ADD &lt;sym&gt;", "Add to watchlist — e.g. ADD USDZAR"],
     ["KEYS", "API keys — Stacks key for Jamaica"],
     ["HELP", "This screen"],
@@ -550,7 +572,7 @@ function vHelp() {
     <div class="sec-label">Keyboard</div>
     <div class="helpgrid">
       <div class="card"><div class="fn"><kbd>/</kbd></div><div style="color:var(--dim);font-size:12px;margin-top:4px">Focus the command bar</div></div>
-      <div class="card"><div class="fn"><kbd>1</kbd>–<kbd>6</kbd></div><div style="color:var(--dim);font-size:12px;margin-top:4px">Jump to TOP · WATCH · FX · COMMOD · NEWS · HELP</div></div>
+      <div class="card"><div class="fn"><kbd>1</kbd>–<kbd>7</kbd></div><div style="color:var(--dim);font-size:12px;margin-top:4px">Jump to TOP · WATCH · FX · COMMOD · NEWS · KEYS · HELP</div></div>
       <div class="card"><div class="fn"><kbd>Esc</kbd></div><div style="color:var(--dim);font-size:12px;margin-top:4px">Leave the command bar</div></div>
     </div>
     <div class="sec-label">Data</div>

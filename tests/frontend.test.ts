@@ -55,7 +55,7 @@ function cannedQuote(sym: string) {
     wk52High: 120, wk52Low: 80, volume: 1000000, asof: Date.now(), stale: false,
   };
 }
-const GROUPS = ["indices", "fx", "cmd", "stocks", "startups", "global", "jamaica"];
+const GROUPS = ["indices", "fx", "cmd", "stocks", "startups", "global", "jamaica", "peru", "argentina"];
 async function stubFetch(url: string) {
   const u = String(url);
   const ok = (d: any) => ({ ok: true, status: 200, json: async () => d });

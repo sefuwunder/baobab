@@ -4,6 +4,9 @@ import { initDataDir, getDb, cacheGet, cacheSet, watchlist, watchAdd, watchRemov
 import { quote, quotes, history, type Quote } from "./yahoo";
 import { REGISTRY, bySym, searchRegistry, DASH_INDICES, DASH_FX, DASH_CMD, DASH_STOCKS, DASH_STARTUPS, DASH_GLOBAL } from "./registry";
 import { fetchNews } from "./news";
+import { fetchFunding } from "./funding";
+import { bvlBoard, bvlQuote, bvlIndices } from "./bvl";
+import { bymaIndices, bymaQuote } from "./byma";
 import { jseStocks, jseQuote, jseHistory, jseKeyStatus, type JseQuote } from "./jse";
 
 const PORT = Number(process.env.BAOBAB_PORT || 3015);
@@ -27,6 +30,14 @@ async function getQuote(sym: string): Promise<{ q: Quote | null; stale: boolean 
     const jq = await getJseQuote(sym.slice(4));
     return { q: jq.q as unknown as Quote | null, stale: jq.stale };
   }
+  if (sym.startsWith("BVL:")) {
+    const bq = await getBvlQuote(sym.slice(4));
+    return { q: bq.q as unknown as Quote | null, stale: bq.stale };
+  }
+  if (sym.startsWith("BYMA:")) {
+    const yq = await getBymaQuote(sym.slice(5));
+    return { q: yq.q as unknown as Quote | null, stale: yq.stale };
+  }
   const key = "q:" + sym;
   const hit = cacheGet(key, QUOTE_TTL);
   if (!hit.stale && hit.val) return { q: hit.val, stale: false };
@@ -39,6 +50,88 @@ async function getQuote(sym: string): Promise<{ q: Quote | null; stale: boolean 
 
 /** Stacks API key, server-side only. */
 function jseKey(): string | null { return getSetting("stacks_api_key"); }
+
+function shapeBvlQuote(q: any, stale: boolean) {
+  return {
+    sym: "BVL:" + q.sym, name: q.name, region: "latam", kind: "stock",
+    note: "BVL Lima", ccy: q.ccy || "PEN",
+    price: q.price, prevClose: q.prevClose, chg: q.chg, chgPct: q.chgPct,
+    dayHigh: q.dayHigh, dayLow: q.dayLow, wk52High: null, wk52Low: null,
+    volume: q.volume, asof: Date.now(), stale,
+  };
+}
+
+async function getBvlQuote(sym: string): Promise<{ q: ReturnType<typeof shapeBvlQuote> | null; stale: boolean }> {
+  const ck = "bvlq:" + sym.toUpperCase();
+  const hit = cacheGet(ck, QUOTE_TTL);
+  if (!hit.stale && hit.val) return { q: hit.val, stale: false };
+  try {
+    const q = await bvlQuote(sym);
+    if (q) { const s = shapeBvlQuote(q, false); cacheSet(ck, s); return { q: s, stale: false }; }
+  } catch { /* fall through to stale */ }
+  return { q: hit.val || null, stale: true };
+}
+
+/** BVL board + indices, keyless, cached. */
+async function getBvlBoard(): Promise<{ stocks: Array<ReturnType<typeof shapeBvlQuote>>; indices: Array<ReturnType<typeof shapeBvlIndex>>; stale: boolean }> {
+  const hit = cacheGet("bvl:board", QUOTE_TTL);
+  if (!hit.stale && hit.val) return { ...hit.val, stale: false };
+  try {
+    const [stocks, indices] = await Promise.all([bvlBoard(12), bvlIndices()]);
+    const out = {
+      stocks: stocks.map((q) => shapeBvlQuote(q, false)),
+      indices: indices.map((x) => shapeBvlIndex(x, false)),
+    };
+    cacheSet("bvl:board", out);
+    return { ...out, stale: false };
+  } catch {
+    return { stocks: hit.val?.stocks || [], indices: hit.val?.indices || [], stale: true };
+  }
+}
+
+function shapeBvlIndex(x: any, stale: boolean) {
+  return {
+    sym: "BVL:" + x.sym, name: x.name, region: "latam", kind: "index",
+    note: "BVL Lima", ccy: "PEN",
+    price: x.price, prevClose: x.prevClose, chg: x.chg, chgPct: x.chgPct,
+    dayHigh: x.dayHigh, dayLow: x.dayLow, wk52High: null, wk52Low: null,
+    volume: null, asof: Date.now(), stale,
+  };
+}
+
+function shapeBymaIndex(x: any, stale: boolean) {
+  return {
+    sym: "BYMA:" + x.sym, name: x.name, region: "latam", kind: "index",
+    note: "BYMA Buenos Aires", ccy: "ARS",
+    price: x.price, prevClose: x.prevClose, chg: x.chg, chgPct: x.chgPct,
+    dayHigh: x.dayHigh, dayLow: x.dayLow, wk52High: null, wk52Low: null,
+    volume: null, asof: Date.now(), stale,
+  };
+}
+
+async function getBymaQuote(sym: string): Promise<{ q: ReturnType<typeof shapeBymaIndex> | null; stale: boolean }> {
+  const ck = "bymaq:" + sym.toUpperCase();
+  const hit = cacheGet(ck, QUOTE_TTL);
+  if (!hit.stale && hit.val) return { q: hit.val, stale: false };
+  try {
+    const q = await bymaQuote(sym);
+    if (q) { const s = shapeBymaIndex(q, false); cacheSet(ck, s); return { q: s, stale: false }; }
+  } catch { /* fall through to stale */ }
+  return { q: hit.val || null, stale: true };
+}
+
+/** BYMA indices, keyless, cached. */
+async function getBymaBoard(): Promise<{ indices: Array<ReturnType<typeof shapeBymaIndex>>; stale: boolean }> {
+  const hit = cacheGet("byma:board", QUOTE_TTL);
+  if (!hit.stale && hit.val) return { indices: hit.val, stale: false };
+  try {
+    const indices = (await bymaIndices()).map((x) => shapeBymaIndex(x, false));
+    cacheSet("byma:board", indices);
+    return { indices, stale: false };
+  } catch {
+    return { indices: hit.val || [], stale: true };
+  }
+}
 
 function shapeJseQuote(q: JseQuote, stale: boolean) {
   return {
@@ -92,7 +185,7 @@ async function getQuotes(syms: string[]): Promise<Array<{ q: Quote | null; stale
 function shapeQuote(r: { q: Quote | null; stale: boolean }) {
   const q = r.q as any;
   if (!q) return null;
-  if (typeof q.sym === "string" && q.sym.startsWith("JSE:")) return { ...q, stale: r.stale }; // already shaped
+  if (typeof q.sym === "string" && /^(JSE|BVL|BYMA):/.test(q.sym)) return { ...q, stale: r.stale }; // already shaped
   const reg = bySym.get(q.sym);
   return {
     sym: q.sym, name: reg?.name || q.name, region: reg?.region || "global", kind: reg?.kind || "stock",
@@ -135,6 +228,13 @@ async function handle(req: Request): Promise<Response> {
     out.jamaica = jb.list;
     out.jse_configured = !!jseKey();
     out.jse_stale = jb.stale;
+    // Peru + Argentina boards, keyless exchange APIs
+    const [bvl, byma] = await Promise.all([getBvlBoard(), getBymaBoard()]);
+    out.peru = bvl.stocks;
+    out.peru_indices = bvl.indices;
+    out.peru_stale = bvl.stale;
+    out.argentina = byma.indices;
+    out.argentina_stale = byma.stale;
     return json(out);
   }
 
@@ -219,12 +319,46 @@ async function handle(req: Request): Promise<Response> {
     return json({ results: searchRegistry(q).map((s) => ({ sym: s.sym, name: s.name, region: s.region, kind: s.kind, note: s.note })) });
   }
 
+  if (req.method === "GET" && path === "/api/funding") {
+    const hit = cacheGet("funding", NEWS_TTL);
+    if (!hit.stale && hit.val) return json({ funding: hit.val, stale: false });
+    try {
+      const items = await fetchFunding();
+      cacheSet("funding", items);
+      return json({ funding: items, stale: false });
+    } catch {
+      return json({ funding: hit.val || [], stale: true });
+    }
+  }
+
+  // BVL index intraday history (from the /v1/indices dailyValues series)
+  if (req.method === "GET" && path === "/api/bvl/history") {
+    const sym = String(url.searchParams.get("sym") || "").trim().toUpperCase();
+    if (!sym) return err("sym required", 400);
+    const ck = "bvlh:" + sym;
+    const hit = cacheGet(ck, QUOTE_TTL);
+    if (!hit.stale && hit.val) return json({ sym, range: "1D", bars: hit.val, stale: false });
+    try {
+      const indices = await bvlIndices();
+      const ix = indices.find((x) => x.sym === sym);
+      if (ix && ix.bars.length > 1) { cacheSet(ck, ix.bars); return json({ sym, range: "1D", bars: ix.bars, stale: false }); }
+    } catch { /* fall through */ }
+    if (hit.val) return json({ sym, range: "1D", bars: hit.val, stale: true });
+    return err("No BVL history for " + sym, 502);
+  }
+
   if (req.method === "GET" && path === "/api/news") {
     const region = String(url.searchParams.get("region") || "all");
     const hit = cacheGet("news", NEWS_TTL);
     let items = (!hit.stale && hit.val) ? hit.val : null;
     if (!items) {
-      try { items = await fetchNews(); cacheSet("news", items); }
+      try {
+        const [news, funding] = await Promise.all([fetchNews(), fetchFunding()]);
+        items = [...funding, ...news]
+          .sort((a: any, b: any) => b.published - a.published)
+          .slice(0, 140);
+        cacheSet("news", items);
+      }
       catch { items = hit.val || []; }
     }
     const filtered = region === "all" ? items : items.filter((n: any) => n.region === region);
