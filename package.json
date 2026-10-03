@@ -1,0 +1,6 @@
+{
+  "name": "baobab",
+  "version": "1.0.0",
+  "description": "A Bloomberg-style markets terminal for Africa, the Caribbean & Latin America.",
+  "scripts": { "start": "bun src/server.ts", "test": "bun test" }
+}
